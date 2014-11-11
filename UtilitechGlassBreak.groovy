@@ -14,29 +14,25 @@ metadata
 		capability "Battery"
         
         fingerprint deviceId:"0xA102", inClusters:"0x20, 0x9C, 0x80, 0x82, 0x84, 0x87, 0x85, 0x72, 0x86, 0x5A"
-   }
+	}
 
     simulator 
     {
-/*
-		status "Contact Open":  "command: 7105, payload: 07 FF 00 FF 07 02 00 00"
-        status "Contact Closed": "command: 7105, payload: 07 00 00 FF 07 02 00 00"
-        
-        status "External Sensor Open":  "command: 7105, payload: 07 FF 00 FF 07 FE 00 00"
-        status "External Sensor Closed": "command: 7105, payload: 07 00 00 FF 07 FE 00 00"
- 
-        status "Case Opened":  "command: 7105, payload: 07 FF 00 FF 07 03 00 00"
-        status "Case Closed": "command: 8407, payload: 0"
-        status "Battery Status": "command: 8003, payload: 1F"
-*/
-    }
+		status "Activate Sensor": "command: 9C02, payload: 26 00 FF 00 00"
+		status "Reset Sensor": "command: 9C02, payload: 26 00 00 00 00"
+
+        status "Battery Status 25%": "command: 8003, payload: 19"
+        status "Battery Status 50%": "command: 8003, payload: 32"
+        status "Battery Status 75%": "command: 8003, payload: 4B"
+        status "Battery Status 100%": "command: 8003, payload: 64"
+	}
 
     tiles 
     {
         standardTile("contact", "device.contact", width: 2, height: 2) 
         {
-            state "open", label: '${name}', icon: "st.contact.contact.open", backgroundColor: "#ffa81e"
             state "closed", label: '${name}', icon: "st.contact.contact.closed", backgroundColor: "#79b821"
+            state "open", label: '${name}', icon: "st.contact.contact.open", backgroundColor: "#FF0000"
         }
         
         valueTile("battery", "device.battery", inactiveLabel: false, decoration: "flat") 
@@ -51,8 +47,7 @@ metadata
 
 def installed()
 {
-	state.BatteryLevel = [100, 100, 100] as int[]
-
+	
 	updated()
 }
 
@@ -68,7 +63,7 @@ def getTimestamp()
 
 def getBatteryLevel(int pNewLevel)
 {
-	def bl = state.BatteryLevel
+	def bl = state.BatteryLevel ?: [pNewLevel, pNewLevel, pNewLevel] as int[]
 
 	def iAvg = 4 + ((int)(pNewLevel + bl[0] + bl[1] + bl[2]) / 4)
     
@@ -90,21 +85,16 @@ def parse(String description)
     def cmd = zwave.parse(description)
     
     
-    log.debug "Parse:  Desc: $description, CMD: $cmd"
+    //log.debug "Parse:  Desc: $description, CMD: $cmd"
     
     if (cmd) 
     {
-/*
-		// Did the sensor just wake up?
-        if (cmd.CMD == "8407") 
-        {
-        }
-*/        
         result << zwaveEvent(cmd)
 	}
     
     return result
 }
+
 
 def zwaveEvent(physicalgraph.zwave.commands.wakeupv2.WakeUpNotification cmd) 
 {
@@ -112,8 +102,26 @@ def zwaveEvent(physicalgraph.zwave.commands.wakeupv2.WakeUpNotification cmd)
 
 	def result = []
     
-    result << createEvent([value: "", descriptionText: "${device.displayName} woke up"])
-	result << response(zwave.wakeUpV2.wakeUpNoMoreInformation())
+
+    result << response(zwave.wakeUpV2.wakeUpNoMoreInformation())
+
+	return result
+}
+
+def zwaveEvent(physicalgraph.zwave.commands.hailv1.Hail cmd) 
+{
+    logCommand(cmd)
+
+	def result = []
+
+	return result
+}
+
+def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd) 
+{
+    logCommand(cmd)
+
+	def result = []
 
 	return result
 }
@@ -128,13 +136,24 @@ def zwaveEvent(physicalgraph.zwave.commands.batteryv1.BatteryReport cmd)
 }
 
 
-def zwaveEvent(physicalgraph.zwave.commands.notificationv3.NotificationReport cmd) 
+def zwaveEvent(physicalgraph.zwave.commands.sensoralarmv1.SensorAlarmReport cmd) 
 {
     logCommand(cmd)
-	
-    def map = null
 
-    return map
+	
+    def result = [name: "contact"]
+    
+    if (cmd.sensorState == 0)
+    {
+    	result += [value: "closed", descriptionText: "${device.displayName} has reset"]
+    }
+    else if (cmd.sensorState == 255)
+    {
+    	result += [value: "open", descriptionText: "${device.displayName} detected broken glass"]
+    }
+
+
+    return createEvent(result)
 }
 
 
